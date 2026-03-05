@@ -453,14 +453,17 @@
       if (!phone) return;
 
       // Fixo mode: open tel: link for softphone (MicroSIP)
+      // branorte-dial.bat handles all number stripping (55, DDD 48, etc)
       if (isFixo) {
-        // Strip country code and local DDD 48 for MicroSIP
-        let sipNumber = phone;
-        if (sipNumber.startsWith('55')) sipNumber = sipNumber.slice(2);
-        if (sipNumber.startsWith('48')) sipNumber = sipNumber.slice(2);
         setStatus('Ligando para ' + formatPhone(phone) + '...', 'connecting');
-        window.location.href = 'tel:' + sipNumber;
-        setTimeout(() => {
+        // Use window.open to work inside Digisac iframe
+        var telLink = document.createElement('a');
+        telLink.href = 'tel:' + phone;
+        telLink.style.display = 'none';
+        document.body.appendChild(telLink);
+        telLink.click();
+        document.body.removeChild(telLink);
+        setTimeout(function() {
           setStatus('Ligacao iniciada via softphone', 'connected');
         }, 1500);
         return;
