@@ -379,6 +379,7 @@
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
 
         const contact = await resp.json();
+        if (!contact) throw new Error('Contato nao encontrado');
         const name = contact.name || contact.alternativeName || contact.nickName || '-';
         const phone = (contact.data && contact.data.number) || contact.number || contact.phone || '';
 
