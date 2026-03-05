@@ -4,116 +4,104 @@
 Pagina web que embute o Wavoip Webphone dentro do Digisac via iframe.
 O vendedor abre a conversa, clica no icone, e liga direto sem sair do Digisac.
 
----
-
-## Passo 1: Hospedar a pagina
-
-### Opcao A: Vercel (gratis, recomendado)
-1. Acesse https://vercel.com e faca login com GitHub
-2. Clique "New Project" > "Upload"
-3. Arraste a pasta `wavoip-digisac/` inteira
-4. Clique "Deploy"
-5. Copie a URL gerada (ex: `https://branorte-voip.vercel.app`)
-
-### Opcao B: Netlify (gratis)
-1. Acesse https://app.netlify.com/drop
-2. Arraste a pasta `wavoip-digisac/`
-3. Copie a URL gerada
-
-### Opcao C: GitHub Pages (gratis)
-1. Crie repositorio no GitHub
-2. Suba os arquivos desta pasta
-3. Ative GitHub Pages nas Settings
-4. URL: `https://seuusuario.github.io/nome-repo/`
+A pagina recebe o `contactId` do Digisac, busca o telefone via API, e ja abre pronta pra ligar.
 
 ---
 
-## Passo 2: Configurar no Digisac
+## Passo 1: Hospedagem (ja feito)
 
-### Opcao A: Via interface (recomendado)
+A pagina esta hospedada no GitHub Pages:
+- **URL:** `https://danielpetersbr.github.io/branorte-voip/`
+- **Repo:** `https://github.com/danielpetersbr/branorte-voip`
 
-1. Acesse o Digisac (mbranorte2.digisac.io)
-2. Menu lateral > **Mais opcoes** > **Integracoes**
-3. Clique **"+ Adicionar"**
-4. Selecione o tipo **"Contato - barra lateral"**
-5. Preencha:
+### Alternativas de hospedagem
+
+| Plataforma | Custo | Como |
+|------------|-------|------|
+| GitHub Pages | Gratis | Repo publico + Pages ativado |
+| Vercel | Gratis | Upload ou connect repo |
+| Netlify | Gratis | Drag and drop |
+
+---
+
+## Passo 2: Integracao no Digisac (ja feito)
+
+A integracao ja esta configurada no Digisac da Branorte.
+
+### Como funciona
+
+O Digisac cria um iframe na barra lateral com a URL:
+```
+https://danielpetersbr.github.io/branorte-voip/?contactId={{contactId}}&ticketId={{ticketId}}
+```
+
+O Digisac substitui `{{contactId}}` pelo UUID do contato aberto. A pagina entao:
+1. Recebe o `contactId` via URL
+2. Chama a API do Digisac (`/api/v1/contacts/{contactId}`)
+3. Extrai nome e telefone do contato
+4. Mostra na tela pronto pra ligar
+
+### Configuracao da integracao (referencia)
 
 | Campo | Valor |
 |-------|-------|
-| **Texto do Menu** | Ligar (Wavoip) |
+| **Tipo** | Contato - barra lateral |
+| **Texto** | Ligar (Wavoip) |
 | **Icone** | Phone |
-| **URL do iframe** | `https://SUA-URL.vercel.app/?phone={{contact_number}}&name={{contact_name}}` |
+| **URL** | `https://danielpetersbr.github.io/branorte-voip/?contactId={{contactId}}&ticketId={{ticketId}}` |
+| **API type** | `context_menu_button_contact_side_list` |
+| **Integration ID** | `3d884f22-2019-4370-a15c-1c86f0164e63` |
 
-6. Clique **Salvar**
+### Variaveis disponiveis em integracoes de barra lateral
 
-### Opcao B: Via API
-
-```bash
-curl -X POST https://SEU-DOMINIO.digisac.io/api/v1/integrations \
-  -H "Authorization: Bearer SEU_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "type": "context_menu_button_contact_side_list",
-    "text": "Ligar (Wavoip)",
-    "icon": "Phone",
-    "url": "https://SUA-URL.vercel.app/?phone={{contact_number}}&name={{contact_name}}"
-  }'
-```
-
-> **IMPORTANTE:** O campo `type` na API NAO e validado - aceita qualquer string sem erro.
-> Use exatamente `context_menu_button_contact_side_list` para "Contato - barra lateral".
-> Icones usam PascalCase: `Phone`, `Whatsapp`, `Calendar`, `Chat`, etc.
-
-### Tipos de integracao (valores API)
-
-| Tipo na Interface | Valor na API |
-|-------------------|-------------|
-| Contato - barra lateral | `context_menu_button_contact_side_list` |
-
-### Variaveis dinamicas do Digisac
-O Digisac substitui automaticamente as variaveis pelos dados do contato:
+> **IMPORTANTE:** Integracoes de barra lateral do Digisac so passam estas variaveis:
 
 | Variavel | O que retorna |
 |----------|---------------|
-| `{{contact_number}}` | Telefone do contato |
-| `{{contact_name}}` | Nome do contato |
-| `{{contact_digisac_name}}` | Nome Digisac do contato |
-| `{{contact_phonebook_name}}` | Nome da agenda do contato |
-| `{{contact_fallback_name}}` | Nome fallback do contato |
-| `{{protocol_number}}` | Numero do protocolo |
 | `{{contactId}}` | UUID do contato |
+| `{{ticketId}}` | UUID do ticket/conversa |
+| `{{userId}}` | UUID do usuario logado |
+| `{{accountId}}` | UUID da conta |
 
-> **NOTA:** Variaveis usam underscores (contact_number), NAO pontos (contact.phone).
-> Formato descoberto diretamente do codigo-fonte JavaScript do Digisac.
-
----
-
-## Passo 3: Configurar o token Wavoip (uma vez)
-
-1. Acesse https://wavoip.com e va na pagina do seu dispositivo
-2. Copie o **Token do dispositivo**
-3. Na primeira vez que o vendedor abrir a integracao no Digisac:
-   - Abra "Configuracoes do dispositivo" (na parte de baixo)
-   - Cole o token
-   - Clique "Salvar token"
-4. O token fica salvo no navegador (nao precisa repetir)
-
-> **Alternativa:** Passe o token direto na URL:
-> `https://SUA-URL.vercel.app/?phone={{contact_number}}&name={{contact_name}}&token=SEU_TOKEN`
-> Assim nao precisa configurar em cada maquina.
+> **NOTA:** `{{contact_number}}`, `{{contact_name}}` e similares NAO funcionam em integracoes
+> de barra lateral. Essas variaveis so existem no contexto de templates de mensagem.
+> Descoberto via analise do codigo-fonte JavaScript do Digisac (funcao eP7).
 
 ---
 
-## Passo 4: Testar
+## Passo 3: Configuracao inicial (primeira vez por maquina)
+
+Na primeira vez que o vendedor abrir a integracao:
+
+1. Clique em **"Configuracoes"** (na parte de baixo)
+2. Preencha os 3 campos:
+
+| Campo | Onde encontrar | Valor Branorte |
+|-------|----------------|----------------|
+| **Token Wavoip** | Painel Wavoip > Dispositivo > Token | (copiar do painel) |
+| **Token Digisac** | Admin Digisac > API | `3acd073d86835b7a13a4aeff1577dd84327c5d00` |
+| **Dominio Digisac** | URL do Digisac | `mbranorte2.digisac.io` |
+
+3. Clique **"Salvar configuracoes"**
+4. Os tokens ficam salvos no navegador (nao precisa repetir)
+
+> **Alternativa:** Passe tokens direto na URL para nao precisar configurar em cada maquina:
+> ```
+> ?contactId={{contactId}}&digisacToken=SEU_TOKEN&digisacDomain=mbranorte2.digisac.io&token=WAVOIP_TOKEN
+> ```
+
+---
+
+## Passo 4: Usar
 
 1. Abra uma conversa no Digisac
-2. Clique no **icone de tomada** (canto superior direito)
+2. Clique no **icone de tomada/plug** (canto superior direito da conversa)
 3. Selecione **"Ligar (Wavoip)"**
-4. O webphone deve aparecer na lateral com:
-   - Nome do contato
-   - Telefone preenchido
+4. O webphone aparece na lateral com:
+   - Nome do contato (buscado da API)
+   - Telefone preenchido automaticamente
    - Botao "Ligar" verde
-5. Clique "Ligar" e teste a chamada
+5. Clique **"Ligar"** e fale normalmente
 
 ---
 
@@ -130,11 +118,33 @@ As gravacoes sao gerenciadas pela propria Wavoip:
 
 | Problema | Solucao |
 |----------|---------|
-| "Configure o token" | Cole o token do dispositivo Wavoip |
-| Pagina nao carrega no iframe | Verifique se a hospedagem permite iframe (Vercel/Netlify permitem) |
-| Telefone nao preenche | Verifique a variavel dinamica do Digisac (testar `{{contact.phone}}`) |
-| Erro ao conectar | Verifique se o dispositivo Wavoip esta online e WhatsApp vinculado |
+| "Configure os tokens abaixo" | Abra Configuracoes e preencha os 3 tokens |
+| "Erro de CORS" | A API do Digisac pode bloquear chamadas cross-origin. Solucao: use proxy ou passe dados via URL |
+| "Numero nao encontrado" | O contato no Digisac nao tem telefone no campo `data.number` |
+| Nome mostra "Carregando..." | Token Digisac invalido ou dominio errado |
+| Pagina nao carrega no iframe | Verifique se a hospedagem permite iframe (GitHub Pages permite) |
+| Erro ao conectar Wavoip | Verifique se o dispositivo Wavoip esta online e WhatsApp vinculado |
 | Sem audio | Permita microfone no navegador (aparece popup na primeira vez) |
+| Telefone formatado errado | A pagina espera formato brasileiro (+55DDDNUMERO) |
+
+---
+
+## Arquitetura tecnica
+
+```
+Digisac (iframe)
+    |
+    | URL: ?contactId=UUID&ticketId=UUID
+    v
+index.html (GitHub Pages)
+    |
+    | fetch /api/v1/contacts/{contactId}
+    v
+Digisac API --> nome + telefone
+    |
+    v
+Wavoip SDK --> liga via SIP/WhatsApp
+```
 
 ---
 
