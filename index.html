@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Branorte - Telefone</title>
+  <script>
+    // Detect mode early for CSS
+    var _mode = new URLSearchParams(window.location.search).get('mode') || 'whatsapp';
+    var _isFixo = _mode === 'fixo';
+  </script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -54,7 +59,7 @@
     }
 
     .btn-call {
-      background: #25D366;
+      background: var(--accent, #25D366);
       color: #fff;
       border: none;
       border-radius: 50px;
@@ -68,7 +73,7 @@
       transition: background 0.2s;
     }
 
-    .btn-call:hover { background: #1fb855; }
+    .btn-call:hover { background: var(--accent-hover, #1fb855); }
     .btn-call:disabled {
       background: #ccc;
       cursor: not-allowed;
@@ -132,7 +137,7 @@
       outline: none;
     }
 
-    .manual-input input:focus { border-color: #25D366; }
+    .manual-input input:focus { border-color: var(--accent, #25D366); }
 
     .config-section {
       width: 100%;
@@ -206,7 +211,7 @@
 <body>
 
   <div class="header">
-    <h2>Branorte Metalurgica - VoIP</h2>
+    <h2 id="pageTitle">Branorte Metalurgica - VoIP</h2>
   </div>
 
   <div class="contact-info">
@@ -222,7 +227,7 @@
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
           <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
         </svg>
-        Ligar
+        <span id="btnCallText">Ligar</span>
       </button>
     </div>
 
@@ -243,7 +248,7 @@
   <details class="config-section" id="configSection">
     <summary>Configuracoes</summary>
 
-    <label>Token Wavoip (dispositivo)</label>
+    <label id="labelDeviceToken">Token Wavoip (dispositivo)</label>
     <input type="text" id="deviceToken" placeholder="Token do dispositivo Wavoip" />
 
     <label>Token Digisac (API)</label>
@@ -269,6 +274,18 @@
     let callSeconds = 0;
     let resolvedPhone = '';
 
+    // ── Mode detection ──
+    const params = new URLSearchParams(window.location.search);
+    const callMode = params.get('mode') || 'whatsapp';
+    const isFixo = callMode === 'fixo';
+    const tokenStorageKey = isFixo ? 'wavoip_device_token_fixo' : 'wavoip_device_token';
+
+    // ── Apply mode theme ──
+    if (isFixo) {
+      document.documentElement.style.setProperty('--accent', '#1565c0');
+      document.documentElement.style.setProperty('--accent-hover', '#0d47a1');
+    }
+
     // ── DOM elements ──
     const elName = document.getElementById('contactName');
     const elPhone = document.getElementById('contactPhone');
@@ -284,8 +301,16 @@
     const btnSaveConfig = document.getElementById('btnSaveConfig');
     const manualInput = document.getElementById('manualInput');
 
+    // ── Set mode-specific UI ──
+    document.getElementById('pageTitle').textContent = isFixo
+      ? 'Branorte Metalurgica - Fixo'
+      : 'Branorte Metalurgica - VoIP';
+    document.getElementById('btnCallText').textContent = isFixo ? 'Ligar Fixo' : 'Ligar';
+    if (isFixo) {
+      document.getElementById('labelDeviceToken').textContent = 'Token Wavoip (dispositivo fixo)';
+    }
+
     // ── URL params (from Digisac iframe) ──
-    const params = new URLSearchParams(window.location.search);
     const paramContactId = params.get('contactId') || '';
     const paramTicketId = params.get('ticketId') || '';
     // Backward compat: direct phone/name params
@@ -297,8 +322,8 @@
 
     // ── Init ──
     async function init() {
-      // Load saved config
-      const savedWavoipToken = localStorage.getItem('wavoip_device_token') || paramToken;
+      // Load saved config (separate token per mode)
+      const savedWavoipToken = localStorage.getItem(tokenStorageKey) || paramToken;
       const savedDigisacToken = localStorage.getItem('digisac_api_token') || paramDigisacToken;
       const savedDigisacDomain = localStorage.getItem('digisac_domain') || paramDigisacDomain;
 
@@ -456,7 +481,7 @@
       const dToken = digisacTokenInput.value.trim();
       const dDomain = digisacDomainInput.value.trim();
 
-      if (wToken) localStorage.setItem('wavoip_device_token', wToken);
+      if (wToken) localStorage.setItem(tokenStorageKey, wToken);
       if (dToken) localStorage.setItem('digisac_api_token', dToken);
       if (dDomain) localStorage.setItem('digisac_domain', dDomain);
 
