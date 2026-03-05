@@ -307,7 +307,9 @@
       : 'Branorte Metalurgica - VoIP';
     document.getElementById('btnCallText').textContent = isFixo ? 'Ligar Fixo' : 'Ligar';
     if (isFixo) {
-      document.getElementById('labelDeviceToken').textContent = 'Token Wavoip (dispositivo fixo)';
+      // Hide WaVoIP token config in fixo mode (not needed - uses tel: link)
+      document.getElementById('labelDeviceToken').style.display = 'none';
+      document.getElementById('deviceToken').style.display = 'none';
     }
 
     // ── URL params (from Digisac iframe) ──
@@ -344,8 +346,12 @@
         showManualInput();
       }
 
-      // Init Wavoip
-      if (savedWavoipToken) {
+      // Fixo mode: uses tel: link (softphone like MicroSIP)
+      // WhatsApp mode: uses WaVoIP SDK
+      if (isFixo) {
+        setStatus('Pronto - clique para ligar pelo softphone', 'connected');
+        btnCall.disabled = resolvedPhone.length < 10;
+      } else if (savedWavoipToken) {
         initWebphone(savedWavoipToken);
       } else {
         setStatus('Configure os tokens abaixo', 'error');
@@ -355,7 +361,7 @@
       // Phone input enables call button
       phoneInput.addEventListener('input', () => {
         resolvedPhone = cleanPhone(phoneInput.value);
-        btnCall.disabled = resolvedPhone.length < 10 || !webphoneAPI;
+        btnCall.disabled = resolvedPhone.length < 10 || (!isFixo && !webphoneAPI);
       });
     }
 
@@ -444,7 +450,21 @@
     // ── Call controls ──
     btnCall.addEventListener('click', async () => {
       const phone = resolvedPhone || cleanPhone(phoneInput.value);
-      if (!phone || !webphoneAPI) return;
+      if (!phone) return;
+
+      // Fixo mode: open tel: link for softphone (MicroSIP)
+      if (isFixo) {
+        const telNumber = phone.startsWith('55') ? '+' + phone : '+55' + phone;
+        setStatus('Abrindo softphone para ' + formatPhone(phone) + '...', 'connecting');
+        window.open('tel:' + telNumber, '_blank');
+        setTimeout(() => {
+          setStatus('Ligacao iniciada via softphone', 'connected');
+        }, 1500);
+        return;
+      }
+
+      // WhatsApp mode: use WaVoIP SDK
+      if (!webphoneAPI) return;
 
       try {
         callActive = true;
