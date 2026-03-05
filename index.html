@@ -171,6 +171,13 @@
       font-size: 13px;
     }
 
+    .config-section label {
+      display: block;
+      font-size: 12px;
+      color: #666;
+      margin-top: 10px;
+    }
+
     .recording-badge {
       display: none;
       align-items: center;
@@ -203,10 +210,10 @@
   </div>
 
   <div class="contact-info">
-    <div class="contact-name" id="contactName">-</div>
+    <div class="contact-name" id="contactName">Carregando...</div>
     <div class="contact-phone" id="contactPhone">-</div>
 
-    <div class="manual-input" id="manualInput">
+    <div class="manual-input" id="manualInput" style="display:none;">
       <input type="tel" id="phoneInput" placeholder="(XX) XXXXX-XXXX" />
     </div>
 
@@ -233,12 +240,21 @@
     <div class="status" id="statusBar"></div>
   </div>
 
-  <details class="config-section">
-    <summary>Configuracoes do dispositivo</summary>
+  <details class="config-section" id="configSection">
+    <summary>Configuracoes</summary>
+
+    <label>Token Wavoip (dispositivo)</label>
     <input type="text" id="deviceToken" placeholder="Token do dispositivo Wavoip" />
-    <button class="btn-save" id="btnSaveToken">Salvar token</button>
+
+    <label>Token Digisac (API)</label>
+    <input type="text" id="digisacToken" placeholder="Token da API Digisac" />
+
+    <label>Dominio Digisac</label>
+    <input type="text" id="digisacDomain" placeholder="ex: mbranorte2.digisac.io" />
+
+    <button class="btn-save" id="btnSaveConfig">Salvar configuracoes</button>
     <p style="font-size:11px;color:#999;margin-top:8px;">
-      O token fica salvo no navegador. Obtenha na pagina do dispositivo em wavoip.com
+      Tokens ficam salvos no navegador. Configure uma vez por maquina.
     </p>
   </details>
 
@@ -251,10 +267,11 @@
     let callActive = false;
     let timerInterval = null;
     let callSeconds = 0;
+    let resolvedPhone = '';
 
     // ── DOM elements ──
-    const contactName = document.getElementById('contactName');
-    const contactPhone = document.getElementById('contactPhone');
+    const elName = document.getElementById('contactName');
+    const elPhone = document.getElementById('contactPhone');
     const phoneInput = document.getElementById('phoneInput');
     const btnCall = document.getElementById('btnCall');
     const btnHangup = document.getElementById('btnHangup');
@@ -262,41 +279,118 @@
     const callTimer = document.getElementById('callTimer');
     const recordingBadge = document.getElementById('recordingBadge');
     const deviceTokenInput = document.getElementById('deviceToken');
-    const btnSaveToken = document.getElementById('btnSaveToken');
+    const digisacTokenInput = document.getElementById('digisacToken');
+    const digisacDomainInput = document.getElementById('digisacDomain');
+    const btnSaveConfig = document.getElementById('btnSaveConfig');
     const manualInput = document.getElementById('manualInput');
 
     // ── URL params (from Digisac iframe) ──
     const params = new URLSearchParams(window.location.search);
+    const paramContactId = params.get('contactId') || '';
+    const paramTicketId = params.get('ticketId') || '';
+    // Backward compat: direct phone/name params
     const paramPhone = params.get('phone') || params.get('telefone') || '';
     const paramName = params.get('name') || params.get('nome') || '';
     const paramToken = params.get('token') || '';
+    const paramDigisacToken = params.get('digisacToken') || '';
+    const paramDigisacDomain = params.get('digisacDomain') || '';
 
     // ── Init ──
-    function init() {
-      // Set contact info from URL params
-      if (paramName) {
-        contactName.textContent = paramName;
-      }
-      if (paramPhone) {
-        contactPhone.textContent = formatPhone(paramPhone);
-        phoneInput.value = paramPhone;
-        manualInput.style.display = 'none';
+    async function init() {
+      // Load saved config
+      const savedWavoipToken = localStorage.getItem('wavoip_device_token') || paramToken;
+      const savedDigisacToken = localStorage.getItem('digisac_api_token') || paramDigisacToken;
+      const savedDigisacDomain = localStorage.getItem('digisac_domain') || paramDigisacDomain;
+
+      if (savedWavoipToken) deviceTokenInput.value = savedWavoipToken;
+      if (savedDigisacToken) digisacTokenInput.value = savedDigisacToken;
+      if (savedDigisacDomain) digisacDomainInput.value = savedDigisacDomain;
+
+      // Try to resolve contact info
+      if (paramPhone && !paramPhone.includes('{{')) {
+        // Direct phone/name params (backward compat)
+        setContactInfo(paramName, paramPhone);
+      } else if (paramContactId && !paramContactId.includes('{{')) {
+        // Have contactId from Digisac - fetch contact details
+        await fetchContactFromDigisac(paramContactId, savedDigisacToken, savedDigisacDomain);
+      } else {
+        // No contact data - show manual input
+        elName.textContent = 'Digitar numero';
+        showManualInput();
       }
 
-      // Load saved token or use param
-      const savedToken = localStorage.getItem('wavoip_device_token') || paramToken;
-      if (savedToken) {
-        deviceTokenInput.value = savedToken;
-        initWebphone(savedToken);
+      // Init Wavoip
+      if (savedWavoipToken) {
+        initWebphone(savedWavoipToken);
       } else {
-        setStatus('Configure o token do dispositivo abaixo', 'error');
+        setStatus('Configure os tokens abaixo', 'error');
+        document.getElementById('configSection').open = true;
       }
 
       // Phone input enables call button
       phoneInput.addEventListener('input', () => {
-        const phone = cleanPhone(phoneInput.value);
-        btnCall.disabled = phone.length < 10 || !webphoneAPI;
+        resolvedPhone = cleanPhone(phoneInput.value);
+        btnCall.disabled = resolvedPhone.length < 10 || !webphoneAPI;
       });
+    }
+
+    // ── Fetch contact from Digisac API ──
+    async function fetchContactFromDigisac(contactId, token, domain) {
+      if (!token || !domain) {
+        elName.textContent = 'Configure token Digisac';
+        setStatus('Token ou dominio Digisac nao configurado', 'error');
+        document.getElementById('configSection').open = true;
+        showManualInput();
+        return;
+      }
+
+      try {
+        setStatus('Buscando contato...', 'connecting');
+        const url = 'https://' + domain + '/api/v1/contacts/' + contactId;
+        const resp = await fetch(url, {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+        const contact = await resp.json();
+        const name = contact.name || contact.alternativeName || contact.nickName || '-';
+        const phone = (contact.data && contact.data.number) || contact.number || contact.phone || '';
+
+        if (phone) {
+          setContactInfo(name, phone);
+          setStatus('', '');
+        } else {
+          elName.textContent = name;
+          elPhone.textContent = 'Numero nao encontrado';
+          showManualInput();
+          setStatus('Numero nao encontrado no contato', 'error');
+        }
+      } catch (err) {
+        console.error('Digisac API error:', err);
+        elName.textContent = 'Erro ao buscar contato';
+        showManualInput();
+
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          setStatus('Erro de CORS - configure proxy ou use token na URL', 'error');
+        } else {
+          setStatus('Erro: ' + err.message, 'error');
+        }
+        document.getElementById('configSection').open = true;
+      }
+    }
+
+    function setContactInfo(name, phone) {
+      if (name) elName.textContent = name;
+      const clean = cleanPhone(phone);
+      elPhone.textContent = formatPhone(clean);
+      phoneInput.value = clean;
+      resolvedPhone = clean;
+      manualInput.style.display = 'none';
+    }
+
+    function showManualInput() {
+      manualInput.style.display = 'block';
     }
 
     // ── Webphone init ──
@@ -310,24 +404,20 @@
           statusBar: { notifications: false, settings: false }
         });
 
-        // Add device
         await webphoneAPI.device.add(token, { persist: true });
 
         setStatus('Conectado - pronto para ligar', 'connected');
-
-        // Enable call button if phone is available
-        const phone = cleanPhone(phoneInput.value || paramPhone);
-        btnCall.disabled = phone.length < 10;
+        btnCall.disabled = resolvedPhone.length < 10;
 
       } catch (err) {
         console.error('Wavoip init error:', err);
-        setStatus('Erro ao conectar: ' + err.message, 'error');
+        setStatus('Erro Wavoip: ' + err.message, 'error');
       }
     }
 
     // ── Call controls ──
     btnCall.addEventListener('click', async () => {
-      const phone = cleanPhone(phoneInput.value || paramPhone);
+      const phone = resolvedPhone || cleanPhone(phoneInput.value);
       if (!phone || !webphoneAPI) return;
 
       try {
@@ -360,13 +450,25 @@
       setStatus('Chamada encerrada', 'ended');
     });
 
-    // ── Save token ──
-    btnSaveToken.addEventListener('click', () => {
-      const token = deviceTokenInput.value.trim();
-      if (token) {
-        localStorage.setItem('wavoip_device_token', token);
-        initWebphone(token);
+    // ── Save config ──
+    btnSaveConfig.addEventListener('click', () => {
+      const wToken = deviceTokenInput.value.trim();
+      const dToken = digisacTokenInput.value.trim();
+      const dDomain = digisacDomainInput.value.trim();
+
+      if (wToken) localStorage.setItem('wavoip_device_token', wToken);
+      if (dToken) localStorage.setItem('digisac_api_token', dToken);
+      if (dDomain) localStorage.setItem('digisac_domain', dDomain);
+
+      // Re-init if we have wavoip token
+      if (wToken && !webphoneAPI) initWebphone(wToken);
+
+      // Re-fetch contact if we now have digisac config
+      if (dToken && dDomain && paramContactId && !resolvedPhone) {
+        fetchContactFromDigisac(paramContactId, dToken, dDomain);
       }
+
+      setStatus('Configuracoes salvas', 'connected');
     });
 
     // ── Timer ──
@@ -406,6 +508,15 @@
 
     function formatPhone(phone) {
       const clean = cleanPhone(phone);
+      if (clean.length >= 12 && clean.startsWith('55')) {
+        const local = clean.slice(2);
+        if (local.length === 11) {
+          return '+55 (' + local.slice(0,2) + ') ' + local.slice(2,7) + '-' + local.slice(7);
+        }
+        if (local.length === 10) {
+          return '+55 (' + local.slice(0,2) + ') ' + local.slice(2,6) + '-' + local.slice(6);
+        }
+      }
       if (clean.length === 11) {
         return '(' + clean.slice(0,2) + ') ' + clean.slice(2,7) + '-' + clean.slice(7);
       }
@@ -417,7 +528,7 @@
 
     function setStatus(msg, type) {
       statusBar.textContent = msg;
-      statusBar.className = 'status ' + type;
+      statusBar.className = 'status ' + (type || '');
     }
 
     // ── Start ──
