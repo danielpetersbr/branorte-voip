@@ -454,9 +454,12 @@
 
       // Fixo mode: open tel: link for softphone (MicroSIP)
       if (isFixo) {
-        const telNumber = phone.startsWith('55') ? '+' + phone : '+55' + phone;
-        setStatus('Abrindo softphone para ' + formatPhone(phone) + '...', 'connecting');
-        window.open('tel:' + telNumber, '_blank');
+        // Strip country code and local DDD 48 for MicroSIP
+        let sipNumber = phone;
+        if (sipNumber.startsWith('55')) sipNumber = sipNumber.slice(2);
+        if (sipNumber.startsWith('48')) sipNumber = sipNumber.slice(2);
+        setStatus('Ligando para ' + formatPhone(phone) + '...', 'connecting');
+        window.location.href = 'tel:' + sipNumber;
         setTimeout(() => {
           setStatus('Ligacao iniciada via softphone', 'connected');
         }, 1500);
