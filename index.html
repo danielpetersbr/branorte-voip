@@ -1,4 +1,4 @@
-<!DOCTYPE html><!-- v4 -->
+<!DOCTYPE html><!-- v5 - fix tel: inside iframe -->
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
@@ -456,9 +456,11 @@
       // branorte-dial.bat handles all number stripping (55, DDD 48, etc)
       if (isFixo) {
         setStatus('Ligando para ' + formatPhone(phone) + '...', 'connecting');
-        // Use window.open to work inside Digisac iframe
+        // tel: inside iframe: use <a target="_top"> so Chrome handles
+        // the protocol at top-level (triggers OS handler, no page nav)
         var telLink = document.createElement('a');
         telLink.href = 'tel:' + phone;
+        telLink.target = '_top';
         telLink.style.display = 'none';
         document.body.appendChild(telLink);
         telLink.click();
