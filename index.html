@@ -1,4 +1,4 @@
-<!DOCTYPE html><!-- v6 - real <a> for tel: in iframe (trusted user gesture) -->
+<!DOCTYPE html><!-- v7 - JS number treatment (Chrome bypasses registry handler) -->
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
@@ -374,10 +374,10 @@
       phoneInput.addEventListener('input', () => {
         resolvedPhone = cleanPhone(phoneInput.value);
         btnCall.disabled = resolvedPhone.length < 10 || (!isFixo && !webphoneAPI);
-        // v6: Update fixo <a> href on manual input
+        // v7: Update fixo <a> href with TREATED number on manual input
         if (isFixo && btnCallFixo) {
           if (resolvedPhone.length >= 10) {
-            btnCallFixo.href = 'tel:' + resolvedPhone;
+            btnCallFixo.href = 'tel:' + treatNumber(resolvedPhone);
             btnCallFixo.style.pointerEvents = 'auto';
             btnCallFixo.style.opacity = '1';
           } else {
@@ -443,9 +443,9 @@
       phoneInput.value = clean;
       resolvedPhone = clean;
       manualInput.style.display = 'none';
-      // v6: Enable fixo <a> with tel: href when phone is resolved
+      // v7: Enable fixo <a> with TREATED number in tel: href
       if (isFixo && btnCallFixo && clean.length >= 10) {
-        btnCallFixo.href = 'tel:' + clean;
+        btnCallFixo.href = 'tel:' + treatNumber(clean);
         btnCallFixo.style.pointerEvents = 'auto';
         btnCallFixo.style.opacity = '1';
       }
@@ -479,18 +479,17 @@
 
     // ── Call controls ──
 
-    // v6: Fixo <a> click - update status but do NOT preventDefault
-    // The user's direct click on the real <a href="tel:..."> is a trusted gesture
-    // Chrome will invoke the OS protocol handler (branorte-dial.bat)
+    // v7: Fixo <a> click - ensure TREATED number in href, then let browser follow
     btnCallFixo.addEventListener('click', function(e) {
       var phone = resolvedPhone || cleanPhone(phoneInput.value);
       if (!phone || phone.length < 10 || btnCallFixo.getAttribute('href') === '#') {
         e.preventDefault();
         return;
       }
-      // Ensure href is current (manual input case)
-      btnCallFixo.href = 'tel:' + phone;
-      setStatus('Ligando para ' + formatPhone(phone) + '...', 'connecting');
+      // Ensure href has treated number (manual input case)
+      var treated = treatNumber(phone);
+      btnCallFixo.href = 'tel:' + treated;
+      setStatus('Ligando ' + formatPhone(phone) + ' → discando ' + treated + '...', 'connecting');
       setTimeout(function() {
         setStatus('Ligacao iniciada via softphone', 'connected');
       }, 1500);
@@ -588,6 +587,43 @@
     // ── Helpers ──
     function cleanPhone(phone) {
       return (phone || '').replace(/\D/g, '');
+    }
+
+    // v7: Number treatment in JS (mirrors dial-treat.ps1)
+    // Chrome bypasses Windows registry tel: handler and sends directly to MicroSIP,
+    // so we must treat the number BEFORE putting it in the tel: href.
+    function treatNumber(raw) {
+      var n = cleanPhone(raw);
+      var localDDD = '48';
+
+      // Strip country code 55
+      if (n.length > 11 && n.substring(0, 2) === '55') {
+        n = n.substring(2);
+      }
+
+      // Short numbers (extensions, emergency) - as-is
+      if (n.length <= 4) return n;
+
+      // 0800/0300/0900 special numbers - as-is
+      if (n.substring(0, 4) === '0800' || n.substring(0, 4) === '0300' || n.substring(0, 4) === '0900') {
+        return n;
+      }
+
+      // Extract DDD and subscriber
+      var ddd = n.substring(0, 2);
+      var sub = n.substring(2);
+
+      // Mobile: 8 digits starting with 9 -> add 9th digit
+      if (sub.length === 8 && sub[0] === '9') {
+        sub = '9' + sub;
+      }
+
+      // Route: local (DDD 48) = subscriber only, other = 0+DDD+subscriber
+      if (ddd === localDDD) {
+        return sub;
+      } else {
+        return '0' + ddd + sub;
+      }
     }
 
     function formatPhone(phone) {
