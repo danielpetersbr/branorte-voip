@@ -1,4 +1,4 @@
-<!DOCTYPE html><!-- v5 - fix tel: inside iframe -->
+<!DOCTYPE html><!-- v6 - real <a> for tel: in iframe (trusted user gesture) -->
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
@@ -229,6 +229,14 @@
         </svg>
         <span id="btnCallText">Ligar</span>
       </button>
+      <!-- v6: Real <a> for fixo mode - user's direct click = trusted gesture for tel: -->
+      <a class="btn-call" id="btnCallFixo" href="#" target="_top"
+         style="display:none;text-decoration:none;color:#fff;pointer-events:none;opacity:0.5;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+        </svg>
+        <span>Ligar Fixo</span>
+      </a>
     </div>
 
     <button class="btn-hangup" id="btnHangup" style="display:none;">
@@ -300,6 +308,7 @@
     const digisacDomainInput = document.getElementById('digisacDomain');
     const btnSaveConfig = document.getElementById('btnSaveConfig');
     const manualInput = document.getElementById('manualInput');
+    const btnCallFixo = document.getElementById('btnCallFixo');
 
     // ── Set mode-specific UI ──
     document.getElementById('pageTitle').textContent = isFixo
@@ -307,6 +316,9 @@
       : 'Branorte Metalurgica - VoIP';
     document.getElementById('btnCallText').textContent = isFixo ? 'Ligar Fixo' : 'Ligar';
     if (isFixo) {
+      // v6: Hide button, show real <a> for tel: (trusted user gesture from iframe)
+      btnCall.style.display = 'none';
+      btnCallFixo.style.display = 'inline-flex';
       // Hide WaVoIP token config in fixo mode (not needed - uses tel: link)
       document.getElementById('labelDeviceToken').style.display = 'none';
       document.getElementById('deviceToken').style.display = 'none';
@@ -358,10 +370,22 @@
         document.getElementById('configSection').open = true;
       }
 
-      // Phone input enables call button
+      // Phone input enables call button / fixo link
       phoneInput.addEventListener('input', () => {
         resolvedPhone = cleanPhone(phoneInput.value);
         btnCall.disabled = resolvedPhone.length < 10 || (!isFixo && !webphoneAPI);
+        // v6: Update fixo <a> href on manual input
+        if (isFixo && btnCallFixo) {
+          if (resolvedPhone.length >= 10) {
+            btnCallFixo.href = 'tel:' + resolvedPhone;
+            btnCallFixo.style.pointerEvents = 'auto';
+            btnCallFixo.style.opacity = '1';
+          } else {
+            btnCallFixo.href = '#';
+            btnCallFixo.style.pointerEvents = 'none';
+            btnCallFixo.style.opacity = '0.5';
+          }
+        }
       });
     }
 
@@ -419,6 +443,12 @@
       phoneInput.value = clean;
       resolvedPhone = clean;
       manualInput.style.display = 'none';
+      // v6: Enable fixo <a> with tel: href when phone is resolved
+      if (isFixo && btnCallFixo && clean.length >= 10) {
+        btnCallFixo.href = 'tel:' + clean;
+        btnCallFixo.style.pointerEvents = 'auto';
+        btnCallFixo.style.opacity = '1';
+      }
     }
 
     function showManualInput() {
@@ -448,28 +478,28 @@
     }
 
     // ── Call controls ──
+
+    // v6: Fixo <a> click - update status but do NOT preventDefault
+    // The user's direct click on the real <a href="tel:..."> is a trusted gesture
+    // Chrome will invoke the OS protocol handler (branorte-dial.bat)
+    btnCallFixo.addEventListener('click', function(e) {
+      var phone = resolvedPhone || cleanPhone(phoneInput.value);
+      if (!phone || phone.length < 10 || btnCallFixo.getAttribute('href') === '#') {
+        e.preventDefault();
+        return;
+      }
+      // Ensure href is current (manual input case)
+      btnCallFixo.href = 'tel:' + phone;
+      setStatus('Ligando para ' + formatPhone(phone) + '...', 'connecting');
+      setTimeout(function() {
+        setStatus('Ligacao iniciada via softphone', 'connected');
+      }, 1500);
+      // Do NOT call e.preventDefault() - let the <a> follow through to tel:
+    });
+
     btnCall.addEventListener('click', async () => {
       const phone = resolvedPhone || cleanPhone(phoneInput.value);
       if (!phone) return;
-
-      // Fixo mode: open tel: link for softphone (MicroSIP)
-      // branorte-dial.bat handles all number stripping (55, DDD 48, etc)
-      if (isFixo) {
-        setStatus('Ligando para ' + formatPhone(phone) + '...', 'connecting');
-        // tel: inside iframe: use <a target="_top"> so Chrome handles
-        // the protocol at top-level (triggers OS handler, no page nav)
-        var telLink = document.createElement('a');
-        telLink.href = 'tel:' + phone;
-        telLink.target = '_top';
-        telLink.style.display = 'none';
-        document.body.appendChild(telLink);
-        telLink.click();
-        document.body.removeChild(telLink);
-        setTimeout(function() {
-          setStatus('Ligacao iniciada via softphone', 'connected');
-        }, 1500);
-        return;
-      }
 
       // WhatsApp mode: use WaVoIP SDK
       if (!webphoneAPI) return;
